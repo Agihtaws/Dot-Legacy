@@ -1,0 +1,23 @@
+{
+  "name": "dotlegacy-backend",
+  "version": "2.0.0",
+  "description": "DotLegacy keeper + API — monitors all wills and sends email notifications",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev":   "node --watch src/index.js",
+    "test":  "node src/test.js"
+  },
+  "dependencies": {
+    "nodemailer": "^6.9.16",
+    "viem":       "^2.38.5",
+    "dotenv":     "^16.4.7",
+    "node-cron":  "^3.0.3",
+    "express":    "^4.21.2",
+    "cors":       "^2.8.5"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

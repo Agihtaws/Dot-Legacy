@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+*.env
+
+# Next.js
+.next/
+
+# Foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+contracts/lib/
+
+# Rust/Cargo
+pvm-contract/target/
+pvm-contract/contract.polkavm
+
+# Backend
+backend/registry.json
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db

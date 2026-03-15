@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  /* Polkadot official pink */
+  --color-brand:       #E6007A;
+  --color-brand-dark:  #B4005E;
+  --color-brand-light: #FF2D9B;
+  --color-bg:          #0A0A0F;
+  --color-surface:     #111118;
+  --color-border:      #1E1E2E;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--color-bg);
+  color: #F1F1F1;
+}
+
+html { scroll-behavior: smooth; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: #0A0A0F; }
+::-webkit-scrollbar-thumb { background: #2A2A3E; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3A3A5E; }
+
+/* Inputs */
+input:focus, select:focus, textarea:focus { outline: none; }
+
+/* Polkadot pink glow utility */
+.glow-pink {
+  box-shadow: 0 0 24px rgba(230, 0, 122, 0.15);
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #E6007A, #FF6DC3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
