@@ -243,7 +243,7 @@ contract LegacyVault is ILegacyVault, ReentrancyGuard, Pausable, Ownable {
 
         uint256 deadline = w.lastCheckIn + w.checkInPeriod;
         require(block.timestamp > deadline, "Check-in period not expired");
-        require(block.timestamp <= deadline + GRACE_PERIOD, "Grace period expired, use markClaimable");
+        require(block.timestamp < deadline + GRACE_PERIOD, "Grace period expired, use markClaimable");
 
         w.status = WillStatus.Warning;
         emit WillEnteredWarning(willId, w.owner, deadline + GRACE_PERIOD);

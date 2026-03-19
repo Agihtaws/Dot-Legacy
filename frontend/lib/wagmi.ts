@@ -1,13 +1,11 @@
-import { createConfig, http } from 'wagmi'
-import { injected, metaMask } from 'wagmi/connectors'
-import { polkadotHubTestnet } from '@/config/chain'
+import { getDefaultConfig }   from '@rainbow-me/rainbowkit'
+import { http }                from 'wagmi'
+import { polkadotHubTestnet }  from '@/config/chain'
 
-export const wagmiConfig = createConfig({
-  chains:     [polkadotHubTestnet],
-  connectors: [
-    metaMask(),
-    injected(),
-  ],
+export const wagmiConfig = getDefaultConfig({
+  appName:   'DotLegacy',
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
+  chains:    [polkadotHubTestnet],
   transports: {
     [polkadotHubTestnet.id]: http('https://services.polkadothub-rpc.com/testnet'),
   },

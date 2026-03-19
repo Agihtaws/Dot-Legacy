@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { secondsUntil } from '@/lib/utils'
 
-export function useCountdown(deadlineTimestamp?: number) {
+export function useCountdown(deadlineTimestamp?: number, status?: number) {
   const [secondsLeft, setSecondsLeft] = useState<number>(0)
 
   useEffect(() => {
@@ -16,8 +16,20 @@ export function useCountdown(deadlineTimestamp?: number) {
 
   const daysLeft  = Math.floor(secondsLeft / 86400)
   const isExpired = secondsLeft <= 0
-  const isUrgent  = daysLeft <= 3 && !isExpired
-  const isWarning = daysLeft <= 15 && !isUrgent && !isExpired
+
+  // Derive warning/urgent from contract status if available
+  let isWarning = false
+  let isUrgent = false
+
+  if (status !== undefined) {
+    // Status codes: 0=Active, 1=Warning, 2=Claimable, 3=Executing, 4=Executed, 5=Revoked
+    isWarning = status === 1
+    isUrgent = status === 2
+  } else {
+    // Fallback to day-based thresholds (for backward compatibility)
+    isWarning = daysLeft <= 15 && daysLeft > 3 && !isExpired
+    isUrgent = daysLeft <= 3 && !isExpired
+  }
 
   function buildDisplay(s: number): string {
     if (s <= 0) return 'Expired'

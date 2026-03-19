@@ -13,37 +13,22 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
     }
 }
 
-// ---------------------------------------------------------------------------
-// ABI selectors
-// ---------------------------------------------------------------------------
-const SELECTOR_VERIFY_SHARES:    [u8; 4] = [0x5f, 0x1a, 0x3d, 0x9c];
-const SELECTOR_RECONSTRUCT_HASH: [u8; 4] = [0x2a, 0x7e, 0x88, 0x14];
+const SELECTOR_VERIFY_SHARES:    [u8; 4] = [0xe7, 0x14, 0x42, 0x38];
+const SELECTOR_RECONSTRUCT_HASH: [u8; 4] = [0xf4, 0x76, 0xc1, 0xde];
 
-// ---------------------------------------------------------------------------
-// Prime field — 2^128 - 59 (fits in u128, is prime)
-// ---------------------------------------------------------------------------
-// 2^127 - 1 — Mersenne prime M_127, proven prime 1876. Fits in u128 with headroom.
 pub const PRIME: u128 = 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF;
 
-/// Modular addition — overflow safe
 #[inline(always)]
 pub fn add_mod(a: u128, b: u128) -> u128 {
     let (sum, overflow) = a.overflowing_add(b);
     if overflow || sum >= PRIME { sum.wrapping_sub(PRIME) } else { sum }
 }
 
-/// Modular subtraction — underflow safe
 #[inline(always)]
 pub fn sub_mod(a: u128, b: u128) -> u128 {
     if a >= b { a - b } else { PRIME - (b - a) }
 }
 
-/// Modular multiplication using Russian peasant algorithm.
-///
-/// Why not 256-bit split: the hi-word reassembly overflows u128
-/// when inputs are near PRIME. Russian peasant only uses add_mod
-/// (which is provably overflow-safe) so it is always correct.
-/// 128 iterations — acceptable for a smart contract.
 pub fn mul_mod(a: u128, b: u128) -> u128 {
     let mut result: u128 = 0;
     let mut a = a % PRIME;
@@ -52,13 +37,12 @@ pub fn mul_mod(a: u128, b: u128) -> u128 {
         if b & 1 == 1 {
             result = add_mod(result, a);
         }
-        a = add_mod(a, a); // double a mod PRIME
+        a = add_mod(a, a);
         b >>= 1;
     }
     result
 }
 
-/// Fast modular exponentiation: base^exp mod PRIME
 pub fn pow_mod(mut base: u128, mut exp: u128) -> u128 {
     let mut result: u128 = 1;
     base %= PRIME;
@@ -70,19 +54,10 @@ pub fn pow_mod(mut base: u128, mut exp: u128) -> u128 {
     result
 }
 
-/// Modular inverse via Fermat's little theorem: a^(PRIME-2) mod PRIME
 pub fn mod_inv(a: u128) -> u128 {
     pow_mod(a, PRIME - 2)
 }
 
-// ---------------------------------------------------------------------------
-// Lagrange interpolation at x=0
-//
-// Given K (index_i, share_i) pairs where share_i = f(index_i),
-// reconstructs f(0) = secret.
-//
-// f(0) = Σ_i  y_i * Π_{j≠i} ( x_j / (x_j - x_i) )  mod PRIME
-// ---------------------------------------------------------------------------
 pub fn lagrange_at_zero(shares: &[u128], indices: &[u128], k: usize) -> u128 {
     let mut secret: u128 = 0;
     for i in 0..k {
@@ -102,9 +77,6 @@ pub fn lagrange_at_zero(shares: &[u128], indices: &[u128], k: usize) -> u128 {
     secret
 }
 
-// ---------------------------------------------------------------------------
-// Secret hash — keccak256 on PVM, identity mock in tests
-// ---------------------------------------------------------------------------
 #[cfg(all(not(test), feature = "pvm"))]
 pub fn hash_secret(secret: u128) -> [u8; 32] {
     let mut buf = [0u8; 32];
@@ -121,9 +93,6 @@ pub fn hash_secret(secret: u128) -> [u8; 32] {
     h
 }
 
-// ---------------------------------------------------------------------------
-// ABI codec
-// ---------------------------------------------------------------------------
 pub fn read_u128_slot(data: &[u8], offset: usize) -> u128 {
     let mut buf = [0u8; 16];
     buf.copy_from_slice(&data[offset + 16..offset + 32]);
@@ -162,9 +131,6 @@ pub fn decode_uint_array(data: &[u8], abi_offset: usize) -> ([u128; MAX_K], usiz
     (arr, safe_len)
 }
 
-// ---------------------------------------------------------------------------
-// Core logic
-// ---------------------------------------------------------------------------
 pub fn verify_shares_logic(
     shares:      &[u128],
     indices:     &[u128],
@@ -182,9 +148,6 @@ pub fn verify_shares_logic(
     hash_secret(reconstructed) == *secret_hash
 }
 
-// ---------------------------------------------------------------------------
-// PVM entry points
-// ---------------------------------------------------------------------------
 #[cfg(all(not(test), feature = "pvm"))]
 #[no_mangle]
 #[polkavm_derive::polkavm_export]
@@ -203,25 +166,77 @@ pub extern "C" fn call() {
     }
 }
 
+fn validate_array_offset(data: &[u8], offset: usize) -> Option<usize> {
+    if offset + 32 > data.len() {
+        return None;
+    }
+    let len = read_u32_slot(data, offset) as usize;
+    let end = offset + 32 + len * 32;
+    if end <= data.len() {
+        Some(len)
+    } else {
+        None
+    }
+}
+
 #[cfg(all(not(test), feature = "pvm"))]
 fn handle_verify_shares() {
     const BUF: usize = 4 + 32 * 30;
-    let mut data  = [0u8; BUF];
-    let read_len  = (api::call_data_size() as usize).min(BUF);
+    let mut data = [0u8; BUF];
+    let read_len = (api::call_data_size() as usize).min(BUF);
     api::call_data_copy(&mut data[..read_len], 0);
-    let p           = &data[4..];
-    let so          = read_u128_slot(p, 0)  as usize;
-    let io          = read_u128_slot(p, 32) as usize;
-    let threshold   = read_u32_slot(p, 64)  as usize;
+
+    if read_len < 4 + 32 * 4 {
+        let mut out = [0u8; 32];
+        write_bool(&mut out, 0, false);
+        api::return_value(ReturnFlags::empty(), &out);
+    }
+
+    let p = &data[4..read_len];
+    let so = read_u128_slot(p, 0) as usize;
+    let io = read_u128_slot(p, 32) as usize;
+    let threshold = read_u32_slot(p, 64) as usize;
     let secret_hash = read_bytes32(p, 96);
-    let (shares, _)  = decode_uint_array(p, so);
-    let (indices, _) = decode_uint_array(p, io);
+
+    if threshold == 0 || threshold > MAX_K {
+        let mut out = [0u8; 32];
+        write_bool(&mut out, 0, false);
+        api::return_value(ReturnFlags::empty(), &out);
+    }
+
+    let shares_len = match validate_array_offset(p, so) {
+        Some(len) => len,
+        None => {
+            let mut out = [0u8; 32];
+            write_bool(&mut out, 0, false);
+            api::return_value(ReturnFlags::empty(), &out);
+        }
+    };
+    let indices_len = match validate_array_offset(p, io) {
+        Some(len) => len,
+        None => {
+            let mut out = [0u8; 32];
+            write_bool(&mut out, 0, false);
+            api::return_value(ReturnFlags::empty(), &out);
+        }
+    };
+
+    if shares_len < threshold || indices_len < threshold {
+        let mut out = [0u8; 32];
+        write_bool(&mut out, 0, false);
+        api::return_value(ReturnFlags::empty(), &out);
+    }
+
+    let (shares_arr, _) = decode_uint_array(p, so);
+    let (indices_arr, _) = decode_uint_array(p, io);
+
     let valid = verify_shares_logic(
-        &shares[..threshold.min(MAX_K)],
-        &indices[..threshold.min(MAX_K)],
+        &shares_arr[..threshold],
+        &indices_arr[..threshold],
         threshold,
         &secret_hash,
     );
+
     let mut out = [0u8; 32];
     write_bool(&mut out, 0, valid);
     api::return_value(ReturnFlags::empty(), &out);
@@ -229,37 +244,59 @@ fn handle_verify_shares() {
 
 #[cfg(all(not(test), feature = "pvm"))]
 fn handle_reconstruct_hash() {
-    const BUF: usize = 4 + 32 * 25;
-    let mut data  = [0u8; BUF];
-    let read_len  = (api::call_data_size() as usize).min(BUF);
+    const BUF: usize = 4 + 32 * 30;
+    let mut data = [0u8; BUF];
+    let read_len = (api::call_data_size() as usize).min(BUF);
     api::call_data_copy(&mut data[..read_len], 0);
-    let p         = &data[4..];
-    let so        = read_u128_slot(p, 0)  as usize;
-    let io        = read_u128_slot(p, 32) as usize;
-    let threshold = read_u32_slot(p, 64)  as usize;
-    let (shares, _)  = decode_uint_array(p, so);
-    let (indices, _) = decode_uint_array(p, io);
-    let reconstructed = if threshold == 0 { 0u128 } else {
-        lagrange_at_zero(&shares[..threshold], &indices[..threshold], threshold)
+
+    if read_len < 4 + 32 * 3 {
+        api::return_value(ReturnFlags::REVERT, &[]);
+    }
+
+    let p = &data[4..read_len];
+    let so = read_u128_slot(p, 0) as usize;
+    let io = read_u128_slot(p, 32) as usize;
+    let threshold = read_u32_slot(p, 64) as usize;
+
+    if threshold == 0 || threshold > MAX_K {
+        api::return_value(ReturnFlags::REVERT, &[]);
+    }
+
+    let shares_len = match validate_array_offset(p, so) {
+        Some(len) => len,
+        None => {
+            api::return_value(ReturnFlags::REVERT, &[]);
+        }
     };
+    let indices_len = match validate_array_offset(p, io) {
+        Some(len) => len,
+        None => {
+            api::return_value(ReturnFlags::REVERT, &[]);
+        }
+    };
+
+    if shares_len < threshold || indices_len < threshold {
+        api::return_value(ReturnFlags::REVERT, &[]);
+    }
+
+    let (shares_arr, _) = decode_uint_array(p, so);
+    let (indices_arr, _) = decode_uint_array(p, io);
+
+    let reconstructed = lagrange_at_zero(
+        &shares_arr[..threshold],
+        &indices_arr[..threshold],
+        threshold,
+    );
+
     let hash = hash_secret(reconstructed);
     let mut out = [0u8; 32];
     write_bytes32(&mut out, 0, &hash);
     api::return_value(ReturnFlags::empty(), &out);
 }
 
-// ---------------------------------------------------------------------------
-// Tests — cargo test --no-default-features --target x86_64-pc-windows-msvc
-// ---------------------------------------------------------------------------
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // -----------------------------------------------------------------------
-    // Share generation helpers
-    // Degree-1 polynomial: f(x) = secret + a1*x  (threshold = 2)
-    // Degree-2 polynomial: f(x) = secret + a1*x + a2*x^2  (threshold = 3)
-    // -----------------------------------------------------------------------
 
     fn shares_t2(secret: u128, a1: u128) -> ([u128; 5], [u128; 5]) {
         let mut s = [0u128; 5];
@@ -287,10 +324,6 @@ mod tests {
         (s, idx)
     }
 
-    // -----------------------------------------------------------------------
-    // Modular arithmetic
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_add_mod_wraps_at_prime() {
         assert_eq!(add_mod(PRIME - 1, 1), 0);
@@ -315,9 +348,7 @@ mod tests {
 
     #[test]
     fn test_mul_mod_large_values() {
-        // (PRIME-1) * (PRIME-1) mod PRIME = 1  (since -1 * -1 = 1)
         assert_eq!(mul_mod(PRIME - 1, PRIME - 1), 1);
-        // 2 * (PRIME-1) mod PRIME = PRIME - 2
         assert_eq!(mul_mod(2, PRIME - 1), PRIME - 2);
     }
 
@@ -333,27 +364,22 @@ mod tests {
     fn test_mod_inverse_small() {
         let a: u128 = 7;
         let inv = mod_inv(a);
-        assert_eq!(mul_mod(a, inv), 1, "7 * inv(7) mod p == 1");
+        assert_eq!(mul_mod(a, inv), 1);
     }
 
     #[test]
     fn test_mod_inverse_large() {
         let a: u128 = 12345678901234567890;
         let inv     = mod_inv(a);
-        assert_eq!(mul_mod(a, inv), 1, "a * inv(a) mod p == 1");
+        assert_eq!(mul_mod(a, inv), 1);
     }
 
     #[test]
     fn test_mod_inverse_near_prime() {
         let a: u128 = PRIME - 1;
         let inv     = mod_inv(a);
-        // inv(PRIME-1) = PRIME-1 since (-1)^(-1) = -1
-        assert_eq!(mul_mod(a, inv), 1, "inv(PRIME-1) * (PRIME-1) == 1");
+        assert_eq!(mul_mod(a, inv), 1);
     }
-
-    // -----------------------------------------------------------------------
-    // Lagrange interpolation
-    // -----------------------------------------------------------------------
 
     #[test]
     fn test_2_of_5_first_two() {
@@ -402,10 +428,6 @@ mod tests {
         assert_eq!(lagrange_at_zero(&[secret], &[1u128], 1), secret);
     }
 
-    // -----------------------------------------------------------------------
-    // verify_shares_logic
-    // -----------------------------------------------------------------------
-
     #[test]
     fn test_verify_valid_2_of_3() {
         let secret        = 0xFEEDFACEDEADBEEFu128;
@@ -427,7 +449,7 @@ mod tests {
         let secret        = 0xFEEDFACEDEADBEEFu128;
         let expected_hash = hash_secret(secret);
         let (mut s, i)    = shares_t2(secret, 0x999u128);
-        s[0]              = s[0].wrapping_add(1); // tamper
+        s[0]              = s[0].wrapping_add(1);
         assert!(!verify_shares_logic(&s[..2], &i[..2], 2, &expected_hash));
     }
 
@@ -446,7 +468,7 @@ mod tests {
     #[test]
     fn test_verify_wrong_hash_fails() {
         let secret        = 42u128;
-        let wrong_hash    = hash_secret(43u128); // hash of a different secret
+        let wrong_hash    = hash_secret(43u128);
         let (s, i)        = shares_t2(secret, 100u128);
         assert!(!verify_shares_logic(&s[..2], &i[..2], 2, &wrong_hash));
     }

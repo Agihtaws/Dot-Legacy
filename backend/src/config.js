@@ -6,6 +6,7 @@ const required = [
   'EMAIL_USER',
   'EMAIL_PASS',
   'EMAIL_FROM',
+  'KEEPER_PRIVATE_KEY',
 ];
 
 for (const key of required) {
@@ -16,10 +17,11 @@ for (const key of required) {
 }
 
 export const config = {
-  rpcUrl:              process.env.RPC_URL,
-  chainId:             Number(process.env.CHAIN_ID || 420420417),
-  legacyVaultAddress:  process.env.LEGACY_VAULT_ADDRESS,
-  vaultDeployBlock:    BigInt(process.env.VAULT_DEPLOY_BLOCK || 0),
+  rpcUrl:             process.env.RPC_URL,
+  chainId:            Number(process.env.CHAIN_ID || 420420417),
+  legacyVaultAddress: process.env.LEGACY_VAULT_ADDRESS,
+  vaultDeployBlock:   BigInt(process.env.VAULT_DEPLOY_BLOCK || 0),
+  keeperPrivateKey:   process.env.KEEPER_PRIVATE_KEY,
 
   email: {
     host:   process.env.EMAIL_HOST || 'smtp.gmail.com',
@@ -31,9 +33,12 @@ export const config = {
   },
 
   api: {
-    port:       Number(process.env.API_PORT   || 3001),
+    port:       Number(process.env.API_PORT    || 3001),
     corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:3000',
   },
+
+  // Frontend URL used in email CTAs
+  frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
 
   pollIntervalMinutes: Number(process.env.POLL_INTERVAL_MINUTES || 60),
   warningDays:         Number(process.env.WARNING_DAYS || 15),

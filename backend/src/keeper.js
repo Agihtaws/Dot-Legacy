@@ -1,9 +1,11 @@
-import { config } from './config.js';
+import { config }                        from './config.js';
 import {
   publicClient,
   getWillSummary,
   getNextCheckInDeadline,
   isClaimable,
+  callMarkWarning,
+  callMarkClaimable,
   scanWillCreatedEvents,
   scanFinishedWillEvents,
   WillStatus,
@@ -12,22 +14,17 @@ import { sendWarningEmail, sendClaimableEmail } from './mailer.js';
 import { getAllEntries, getEmail, unregisterWill } from './registry.js';
 
 // -----------------------------------------------------------------------
-// In-memory notification state — prevents duplicate emails per run cycle
-// Cleared on process restart (intentional — re-check after restart)
+// In-memory dedup — prevents re-sending on same run
+// Note: resets on server restart — acceptable for hackathon demo
 // -----------------------------------------------------------------------
-const notified = new Set();
+const notified    = new Set();
+const actionTaken = new Set();
 
-function notifKey(willId, type) {
-  return `${willId}-${type}`;
-}
+function notifKey(willId, type)  { return `${willId}-notif-${type}`;  }
+function actionKey(willId, type) { return `${willId}-action-${type}`; }
 
 // -----------------------------------------------------------------------
-// Step 1: Discover all will IDs from chain events + registry
-//
-// Strategy:
-//  a) Read all WillCreated events from deployment block to now
-//  b) Combine with manually registered wills (from API)
-//  c) Remove wills that are already Executed or Revoked
+// Discover all active will IDs (chain events + registry)
 // -----------------------------------------------------------------------
 async function discoverActiveWillIds() {
   const latestBlock = await publicClient.getBlockNumber();
@@ -35,104 +32,142 @@ async function discoverActiveWillIds() {
 
   console.log(`  🔍 Scanning events: block ${fromBlock} → ${latestBlock}`);
 
-  // Scan WillCreated events
   const createdEvents = await scanWillCreatedEvents(fromBlock, latestBlock);
   const chainWillIds  = createdEvents.map(e => e.args.willId);
+  const registryIds   = getAllEntries().map(e => e.willId);
 
-  // Combine with registry (frontend-registered wills)
-  const registryEntries = getAllEntries();
-  const registryIds     = registryEntries.map(e => e.willId);
-
-  // Deduplicate
   const allIds = [...new Set([...chainWillIds, ...registryIds].map(id => id.toString()))]
     .map(id => BigInt(id));
 
   console.log(`  📋 Found ${allIds.length} will(s): ${chainWillIds.length} from chain, ${registryIds.length} from registry`);
 
-  // Scan finished wills to exclude
-  const finishedEvents  = await scanFinishedWillEvents(fromBlock, latestBlock);
-  const finishedIds     = new Set(finishedEvents.map(e => e.args.willId.toString()));
+  const finishedEvents = await scanFinishedWillEvents(fromBlock, latestBlock);
+  const finishedIds    = new Set(finishedEvents.map(e => e.args.willId.toString()));
+  const activeIds      = allIds.filter(id => !finishedIds.has(id.toString()));
 
-  const activeIds = allIds.filter(id => !finishedIds.has(id.toString()));
   console.log(`  ✅ ${activeIds.length} active will(s) after excluding ${finishedIds.size} finished`);
-
   return activeIds;
 }
 
 // -----------------------------------------------------------------------
-// Step 2: Process a single will
+// Process a single will
 // -----------------------------------------------------------------------
 async function processWill(willId) {
   try {
-    const [summary, deadline, claimable] = await Promise.all([
-      getWillSummary(willId),
-      getNextCheckInDeadline(willId),
-      isClaimable(willId),
-    ]);
+    const summary  = await getWillSummary(willId);
+    const deadline = await getNextCheckInDeadline(willId);
 
-    const statusName  = WillStatus[Number(summary.status)] || 'Unknown';
-    const now         = BigInt(Math.floor(Date.now() / 1000));
-    const secondsLeft = deadline > now ? Number(deadline - now) : 0;
-    const daysLeft    = Math.floor(secondsLeft / 86400);
-    const deadlineDate = new Date(Number(deadline) * 1000);
+    const statusCode    = Number(summary.status);
+    const statusName    = WillStatus[statusCode] || 'Unknown';
+    const now           = Math.floor(Date.now() / 1000);
+    const checkInPeriod = Number(summary.checkInPeriod);
+    const gracePeriod   = Number(summary.gracePeriod);
+    const lastCheckIn   = Number(summary.lastCheckIn);
 
-    // Get email from registry
-    const email = getEmail(willId);
+    const realDeadline  = lastCheckIn + checkInPeriod;
+    const claimableAt   = lastCheckIn + checkInPeriod + gracePeriod;
 
-    console.log(`  Will #${willId} | ${statusName} | ${daysLeft}d left | email: ${email || 'not registered'}`);
+    const secondsToDeadline = Math.max(0, realDeadline - now);
+    const daysLeft          = secondsToDeadline / 86400;
+    const minutesLeft       = Math.floor(secondsToDeadline / 60);
+    const deadlineDate      = new Date(realDeadline * 1000);
+    const email             = getEmail(willId);
 
-    // --- Clean up finished wills ---
-    if (summary.status === 4n || summary.status === 5n) {
-      console.log(`    ↳ ${statusName} — cleaning up registry`);
+    console.log(`  Will #${willId} | ${statusName} | ${minutesLeft}m left | email: ${email || 'not registered'}`);
+
+    // ── Clean up finished wills ──
+    if (statusCode === 4 || statusCode === 5) {
+      console.log(`    ↳ ${statusName} — removing from registry`);
       unregisterWill(willId);
       return;
     }
 
-    // Skip if no email registered for this will
-    if (!email) {
-      console.log(`    ↳ No email registered — skipping notification`);
+    // ── AUTO: markClaimable ──
+    if ((statusCode === 0 || statusCode === 1) && now > claimableAt) {
+      const key = actionKey(willId, 'markClaimable');
+      if (!actionTaken.has(key)) {
+        console.log(`    ⚡ Auto: calling markClaimable for will #${willId}`);
+        try {
+          const hash = await callMarkClaimable(willId);
+          console.log(`    ✅ markClaimable tx: ${hash}`);
+          actionTaken.add(key);
+          if (email) {
+            const emailKey = notifKey(willId, 'claimable');
+            if (!notified.has(emailKey)) {
+              await sendClaimableEmail({ to: email, willId, ownerAddress: summary.owner });
+              notified.add(emailKey);
+            }
+          }
+        } catch (err) {
+          console.error(`    ❌ markClaimable failed: ${err.message}`);
+        }
+        return;
+      }
+    }
+
+    // ── AUTO: markWarning ──
+    if (statusCode === 0 && now > realDeadline && now <= claimableAt) {
+      const key = actionKey(willId, 'markWarning');
+      if (!actionTaken.has(key)) {
+        console.log(`    ⚡ Auto: calling markWarning for will #${willId}`);
+        try {
+          const hash = await callMarkWarning(willId);
+          console.log(`    ✅ markWarning tx: ${hash}`);
+          actionTaken.add(key);
+        } catch (err) {
+          console.error(`    ❌ markWarning failed: ${err.message}`);
+        }
+      }
       return;
     }
 
-    // --- Claimable notification ---
-    if (claimable) {
+    // ── Already Claimable status — send email if not yet sent ──
+    if (statusCode === 2 && email) {
       const key = notifKey(willId, 'claimable');
       if (!notified.has(key)) {
         await sendClaimableEmail({ to: email, willId, ownerAddress: summary.owner });
         notified.add(key);
       } else {
-        console.log(`    ↳ Claimable email already sent this session`);
+        console.log(`    ↳ Claimable email already sent`);
       }
       return;
     }
 
-    // --- Urgent: ≤ urgentDays ---
-    if (daysLeft <= config.urgentDays && daysLeft >= 0) {
-      const key = notifKey(willId, `urgent-${daysLeft}`);
+    if (!email) {
+      console.log(`    ↳ No email registered — skipping notifications`);
+      return;
+    }
+
+    // ── Threshold: only notify when < 50% of period remains ──
+    const halfPeriod = checkInPeriod / 2;
+
+    // Urgent warning
+    if (secondsToDeadline <= halfPeriod && daysLeft <= config.urgentDays && secondsToDeadline > 0) {
+      const key = notifKey(willId, 'urgent');
       if (!notified.has(key)) {
-        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft, deadline: deadlineDate });
+        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft: Math.ceil(daysLeft), deadline: deadlineDate });
         notified.add(key);
+        console.log(`    ↳ Urgent email sent`);
       }
       return;
     }
 
-    // --- Warning: ≤ warningDays ---
-    if (daysLeft <= config.warningDays) {
-      // Bucket by 5-day intervals to avoid daily spam: 15d, 10d, 5d
-      const bucket = Math.floor(daysLeft / 5) * 5;
-      const key    = notifKey(willId, `warning-${bucket}`);
+    // Regular warning
+    if (secondsToDeadline <= halfPeriod && daysLeft <= config.warningDays && secondsToDeadline > 0) {
+      const key = notifKey(willId, 'warning');
       if (!notified.has(key)) {
-        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft, deadline: deadlineDate });
+        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft: Math.ceil(daysLeft), deadline: deadlineDate });
         notified.add(key);
+        console.log(`    ↳ Warning email sent`);
       }
       return;
     }
 
-    console.log(`    ↳ Safe — ${daysLeft} days until check-in needed`);
+    console.log(`    ↳ Safe — ${minutesLeft} minutes until check-in needed`);
 
   } catch (err) {
     if (err.message?.includes('WillNotFound') || err.message?.includes('revert')) {
-      console.log(`  Will #${willId} | Not found on chain — skipping`);
+      console.log(`  Will #${willId} | Not found — skipping`);
     } else {
       console.error(`  Will #${willId} | Error: ${err.message}`);
     }
@@ -144,23 +179,17 @@ async function processWill(willId) {
 // -----------------------------------------------------------------------
 export async function runKeeper() {
   console.log(`\n🔍 [${new Date().toISOString()}] Keeper running...`);
-
   try {
     const activeWillIds = await discoverActiveWillIds();
-
     if (activeWillIds.length === 0) {
-      console.log('  No active wills found.');
-      console.log('  Waiting for users to create wills via the frontend.\n');
+      console.log('  No active wills. Waiting for users to create wills.\n');
       return;
     }
-
-    // Process all wills sequentially to avoid RPC rate limits
     for (const willId of activeWillIds) {
       await processWill(willId);
     }
   } catch (err) {
     console.error(`  Keeper error: ${err.message}`);
   }
-
   console.log(`✅ Keeper run complete\n`);
 }

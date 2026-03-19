@@ -1,4 +1,3 @@
-import { WILL_STATUS, WillStatusCode } from '@/config/contracts'
 
 // -----------------------------------------------------------------------
 // Format address: 0x1234...5678
@@ -27,9 +26,25 @@ export function formatCountdown(secondsLeft: number): string {
   const days    = Math.floor(secondsLeft / 86400)
   const hours   = Math.floor((secondsLeft % 86400) / 3600)
   const minutes = Math.floor((secondsLeft % 3600) / 60)
-  if (days > 0)    return `${days}d ${hours}h`
-  if (hours > 0)   return `${hours}h ${minutes}m`
+  if (days > 0)  return `${days}d ${hours}h`
+  if (hours > 0) return `${hours}h ${minutes}m`
   return `${minutes}m`
+}
+
+// -----------------------------------------------------------------------
+// Format duration from raw seconds → human readable
+// e.g. 120 → "2m" | 3600 → "1h" | 5400 → "1h 30m" | 172800 → "2d"
+// -----------------------------------------------------------------------
+export function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '0m'
+  const d = Math.floor(seconds / 86400)
+  const h = Math.floor((seconds % 86400) / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (d > 0 && h > 0) return `${d}d ${h}h`
+  if (d > 0)           return `${d}d`
+  if (h > 0 && m > 0) return `${h}h ${m}m`
+  if (h > 0)           return `${h}h`
+  return `${m}m`
 }
 
 // -----------------------------------------------------------------------
@@ -79,24 +94,16 @@ export function bpsToPercent(bps: bigint): string {
 
 // -----------------------------------------------------------------------
 // Generate a deterministic secret hash for a wallet (for demo)
-// In production: generate client-side secret, split into shares,
-// store shares with guardians, store hash on-chain.
-// For hackathon demo: use a fixed hash based on owner address.
 // -----------------------------------------------------------------------
 export function generateDemoSecretHash(ownerAddress: string): `0x${string}` {
-  // keccak256-like: just use a fixed bytes32 derived from address for demo
-  // Real implementation would use: crypto.getRandomValues() + actual Shamir splitting
   const padded = ownerAddress.toLowerCase().replace('0x', '').padStart(64, '0')
   return `0x${padded}` as `0x${string}`
 }
 
 // -----------------------------------------------------------------------
 // Generate demo share for a guardian (index 1-based)
-// Real implementation: proper Shamir splitting off-chain
 // -----------------------------------------------------------------------
 export function generateDemoShare(secret: string, index: number): bigint {
-  // Simple demo: share_i = secret_as_number + index
-  // Real: Lagrange polynomial evaluation at x=index
   const secretNum = BigInt('0x' + secret.replace('0x', '').slice(0, 32))
   return secretNum + BigInt(index) * 1000n
 }

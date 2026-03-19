@@ -41,32 +41,18 @@ contract Deploy is Script {
         console.log("WillCertificate:", address(cert));
 
         // ----------------------------------------------------------------
-        // 3. Deploy GuardianManager — needs vault address too, use temp
-        //    We deploy a placeholder and re-set after vault is deployed.
-        //    For simplicity: deploy vault first, then grant role.
-        //
-        //    Deployment order:
-        //      a) cert (no vault needed in constructor)
-        //      b) vault — needs cert + guardianMgr → use pre-computed addresses
-        //         OR deploy guardianMgr with msg.sender as temporary vault role,
-        //         then grant vault role after
+        // 3. Deploy GuardianManager with deployer as temporary VAULT_ROLE
+        //    holder — role will be transferred to vault and revoked below.
         // ----------------------------------------------------------------
-
-        // Deploy GuardianManager with deployer as temporary VAULT_ROLE holder
         GuardianManager gm = new GuardianManager(deployer);
         console.log("GuardianManager:", address(gm));
 
         // ----------------------------------------------------------------
         // 4. Deploy LegacyVault
-        //    NOTE: PVM contract must be deployed FIRST via cast send --create
-        //    Set PVM_SECRET_SHARING_ADDRESS in .env before running this script.
-        //    For initial testnet deploy without PVM, use address(0) stub below
-        //    and replace once PVM contract is live.
+        //    PVM_SECRET_SHARING_ADDRESS must be set in .env
         // ----------------------------------------------------------------
         address pvmAddress = vm.envOr("PVM_SECRET_SHARING_ADDRESS", address(0));
 
-        // For testnet demo without PVM ready: deploy a mock secret sharing stub
-        // Replace this with real PVM address once contract.polkavm is deployed
         if (pvmAddress == address(0)) {
             console.log("WARNING: PVM address not set. Deploy pvm-contract first.");
             console.log("Set PVM_SECRET_SHARING_ADDRESS in .env and re-run.");
@@ -83,6 +69,15 @@ contract Deploy is Script {
         gm.grantRole(gm.VAULT_ROLE(), address(vault));
         cert.setLegacyVault(address(vault));
 
+        // ----------------------------------------------------------------
+        // 6. Clean up deployer privileges — vault is now the only authority
+        //    Revoke deployer's temporary VAULT_ROLE on GuardianManager
+        //    Renounce deployer's DEFAULT_ADMIN_ROLE on GuardianManager
+        //    (WillCertificate ownership is kept for emergency pause only)
+        // ----------------------------------------------------------------
+        gm.revokeRole(gm.VAULT_ROLE(), deployer);
+        gm.renounceRole(gm.DEFAULT_ADMIN_ROLE(), deployer);
+
         vm.stopBroadcast();
 
         // ----------------------------------------------------------------
@@ -98,5 +93,9 @@ contract Deploy is Script {
         console.log("DOT  token:        ", address(dot));
         console.log("USDT token:        ", address(usdt));
         console.log("USDC token:        ", address(usdc));
+        console.log("\n=== ROLES ===");
+        console.log("GuardianManager VAULT_ROLE:         LegacyVault only");
+        console.log("GuardianManager DEFAULT_ADMIN_ROLE: renounced");
+        console.log("WillCertificate owner:              ", deployer, "(emergency only)");
     }
 }

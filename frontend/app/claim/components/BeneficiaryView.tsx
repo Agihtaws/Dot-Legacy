@@ -1,7 +1,7 @@
 'use client'
 
-import { useAccount }       from 'wagmi'
-import { bpsToPercent, shortAddress } from '@/lib/utils'
+import { useAccount }                     from 'wagmi'
+import { bpsToPercent, shortAddress }     from '@/lib/utils'
 
 interface Beneficiary {
   wallet:       string
@@ -21,69 +21,160 @@ export function BeneficiaryView({ beneficiaries, willId, executed }: Props) {
     ? beneficiaries.find(b => b.wallet.toLowerCase() === address.toLowerCase())
     : null
 
+  /* ── not connected ── */
   if (!address) {
     return (
-      <div className="p-4 rounded-xl bg-[#0F0F1A] border border-[#1E1E2E] text-center">
-        <p className="text-sm text-gray-400">Connect your wallet to check if you're a beneficiary</p>
+      <div style={{
+        padding:      '16px',
+        borderRadius: '12px',
+        background:   'rgba(15,15,26,0.9)',
+        border:       '1px solid #1E1E2E',
+        textAlign:    'center',
+      }}>
+        <p style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '13px', color: '#9CA3AF' }}>
+          Connect your wallet to check if you're a beneficiary
+        </p>
       </div>
     )
   }
 
+  /* ── not a beneficiary ── */
   if (!myShare) {
     return (
-      <div className="p-4 rounded-xl bg-[#0F0F1A] border border-[#1E1E2E]">
-        <p className="text-sm text-gray-400 text-center">
+      <div style={{
+        padding:      '16px',
+        borderRadius: '12px',
+        background:   'rgba(15,15,26,0.9)',
+        border:       '1px solid #1E1E2E',
+        textAlign:    'center',
+      }}>
+        <p style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '13px', color: '#9CA3AF', marginBottom: '4px' }}>
           Your connected wallet is not a beneficiary of this will.
         </p>
-        <p className="text-xs text-gray-600 text-center mt-1 font-mono">{shortAddress(address, 10)}</p>
+        <p style={{ fontFamily: 'monospace', fontSize: '11px', color: '#4B5563' }}>
+          {shortAddress(address, 10)}
+        </p>
       </div>
     )
   }
 
+  /* ── is a beneficiary ── */
   return (
-    <div className="space-y-3">
-      <div className="p-5 rounded-2xl bg-[#E6007A]/5 border border-[#E6007A]/20">
-        <p className="text-xs text-[#E6007A] font-bold uppercase tracking-widest mb-3">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+      {/* your share highlight */}
+      <div style={{
+        padding:      '20px',
+        borderRadius: '14px',
+        background:   'rgba(230,0,122,0.06)',
+        border:       '1px solid rgba(230,0,122,0.2)',
+      }}>
+        <p style={{
+          fontFamily:    'var(--font-body)',
+          fontWeight:    700,
+          fontSize:      '10px',
+          letterSpacing: '0.16em',
+          textTransform: 'uppercase' as const,
+          color:         'rgba(230,0,122,0.8)',
+          marginBottom:  '14px',
+        }}>
           Your Inheritance
         </p>
-        <div className="flex items-center justify-between">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <p className="text-3xl font-bold text-white">
+            <p style={{
+              fontFamily:   'var(--font-display)',
+              fontWeight:   800,
+              fontSize:     '2.5rem',
+              color:        '#FFFFFF',
+              lineHeight:   1,
+              marginBottom: '6px',
+            }}>
               {bpsToPercent(myShare.sharePercent)}
             </p>
-            <p className="text-xs text-gray-500 mt-1 font-mono">{shortAddress(address, 10)}</p>
+            <p style={{ fontFamily: 'monospace', fontSize: '11px', color: '#6B7280' }}>
+              {shortAddress(address, 10)}
+            </p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-500 mb-1">of all registered tokens</p>
-            {executed ? (
-              <span className="px-3 py-1 rounded-full bg-emerald-950/50 border border-emerald-800/50 text-emerald-400 text-xs font-semibold">
-                ✓ Received
-              </span>
-            ) : (
-              <span className="px-3 py-1 rounded-full bg-[#E6007A]/10 border border-[#E6007A]/30 text-[#FF6DC3] text-xs font-semibold">
-                Pending
-              </span>
-            )}
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '11px', color: '#6B7280', marginBottom: '8px' }}>
+              of all registered tokens
+            </p>
+            <span style={{
+              display:      'inline-flex',
+              alignItems:   'center',
+              gap:          '6px',
+              padding:      '5px 12px',
+              borderRadius: '999px',
+              fontFamily:   'var(--font-body)',
+              fontWeight:   600,
+              fontSize:     '11px',
+              ...(executed
+                ? { background: 'rgba(6,78,59,0.4)',    border: '1px solid rgba(52,211,153,0.3)', color: '#34D399' }
+                : { background: 'rgba(230,0,122,0.1)',  border: '1px solid rgba(230,0,122,0.3)',  color: '#FF6DC3' }
+              ),
+            }}>
+              {executed ? '✓ Received' : 'Pending'}
+            </span>
           </div>
         </div>
       </div>
 
-      {/* All beneficiaries */}
-      <div className="bg-[#0F0F1A] rounded-xl p-4 border border-[#1E1E2E]">
-        <p className="text-xs text-gray-500 uppercase tracking-wider mb-3">All beneficiaries</p>
-        <div className="space-y-2">
-          {beneficiaries.map((b, i) => (
-            <div key={i} className="flex items-center justify-between text-sm">
-              <div className="flex items-center gap-2">
-                {b.wallet.toLowerCase() === address?.toLowerCase() && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#E6007A]/20 text-[#FF6DC3] font-semibold">YOU</span>
+      {/* all beneficiaries table */}
+      <div style={{
+        borderRadius: '12px',
+        background:   'rgba(15,15,26,0.9)',
+        border:       '1px solid #1E1E2E',
+        overflow:     'hidden',
+      }}>
+        <p style={{
+          fontFamily:    'var(--font-body)',
+          fontWeight:    400,
+          fontSize:      '10px',
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase' as const,
+          color:         '#4B5563',
+          padding:       '12px 16px 8px',
+          borderBottom:  '1px solid #1E1E2E',
+        }}>
+          All Beneficiaries
+        </p>
+        {beneficiaries.map((b, i) => {
+          const isMe = b.wallet.toLowerCase() === address?.toLowerCase()
+          return (
+            <div key={i} style={{
+              display:        'flex',
+              alignItems:     'center',
+              justifyContent: 'space-between',
+              padding:        '10px 16px',
+              borderBottom:   i < beneficiaries.length - 1 ? '1px solid rgba(30,30,46,0.6)' : 'none',
+              background:     isMe ? 'rgba(230,0,122,0.04)' : 'transparent',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {isMe && (
+                  <span style={{
+                    padding:      '2px 6px',
+                    borderRadius: '4px',
+                    background:   'rgba(230,0,122,0.15)',
+                    fontFamily:   'var(--font-body)',
+                    fontWeight:   700,
+                    fontSize:     '10px',
+                    color:        '#FF6DC3',
+                    letterSpacing:'0.05em',
+                  }}>
+                    YOU
+                  </span>
                 )}
-                <span className="text-gray-400 font-mono">{shortAddress(b.wallet)}</span>
+                <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#9CA3AF' }}>
+                  {shortAddress(b.wallet)}
+                </span>
               </div>
-              <span className="font-bold text-[#FF6DC3]">{bpsToPercent(b.sharePercent)}</span>
+              <span style={{ fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: '13px', color: '#FF6DC3' }}>
+                {bpsToPercent(b.sharePercent)}
+              </span>
             </div>
-          ))}
-        </div>
+          )
+        })}
       </div>
     </div>
   )

@@ -6,13 +6,13 @@
 // TIMELOCK_DELAY      = 2 minutes
 // -----------------------------------------------------------------------
 export const CONTRACTS = {
-  LEGACY_VAULT:       '0x75F082aAd0bdCE2147D23d5085C4B9BD6f4bb644' as `0x${string}`,
-  WILL_CERTIFICATE:   '0xA100B5aDf8A1f72d70B49124962b9E9029590333' as `0x${string}`,
-  GUARDIAN_MANAGER:   '0x34E854A8F475b07032244300f1975266db56150a' as `0x${string}`,
-  PVM_SECRET_SHARING: '0x5463626Ca6d5A9BC4cbA6C2D74018eaBB117Dfae' as `0x${string}`,
-  TOKEN_DOT:          '0x0A631C96722eA998C89802aAF151bF28ba75EE59' as `0x${string}`,
-  TOKEN_USDT:         '0xB32BffC9AB9DA5F3C84788e31fC9c7cA5381194D' as `0x${string}`,
-  TOKEN_USDC:         '0x44C1AC1EcBB5Ef7CD42D49f5ea9b40C18eD18f28' as `0x${string}`,
+  LEGACY_VAULT:       '0x327052a9B195A1a3F78e411f5fe78e76b81Cf86b' as `0x${string}`,
+  WILL_CERTIFICATE:   '0xBFEe5E2B30eEB28049f5dAeDe652ACe35d8Daa07' as `0x${string}`,
+  GUARDIAN_MANAGER:   '0x32F8155E260572b7F036c15C8F25527955dc38b8' as `0x${string}`,
+  PVM_SECRET_SHARING: '0x37E33fAA9148980EC76aAF1179bE02B648e036Ed' as `0x${string}`,
+  TOKEN_DOT:          '0xf0E53EBb33d0fF826739c1D753220df8642E8320' as `0x${string}`,
+  TOKEN_USDT:         '0x5Ee07bc463B6eb673666E9156F25cae918c7d687' as `0x${string}`,
+  TOKEN_USDC:         '0x1A00B6633615326CFD8e8CA880b655a487BC9791' as `0x${string}`,
 } as const
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'

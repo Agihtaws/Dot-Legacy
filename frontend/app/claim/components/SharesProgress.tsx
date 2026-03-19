@@ -7,38 +7,61 @@ interface Props {
 }
 
 export function SharesProgress({ submitted, threshold, total }: Props) {
-  const pct     = Math.min((submitted / threshold) * 100, 100)
+  const pct     = Math.min((submitted / Math.max(threshold, 1)) * 100, 100)
   const reached = submitted >= threshold
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-400 font-medium">Guardian shares submitted</span>
-        <span className={`font-bold ${reached ? 'text-emerald-400' : 'text-[#FF6DC3]'}`}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+
+      {/* label row */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <p style={{ fontFamily: 'var(--font-body)', fontWeight: 400, fontSize: '13px', color: '#9CA3AF' }}>
+          Guardian shares submitted
+        </p>
+        <p style={{
+          fontFamily: 'var(--font-body)',
+          fontWeight: 700,
+          fontSize:   '13px',
+          color:      reached ? '#34D399' : '#FF6DC3',
+        }}>
           {submitted} / {threshold} required
-        </span>
+        </p>
       </div>
 
-      {/* Progress bar */}
-      <div className="h-2.5 rounded-full bg-[#1E1E2E] overflow-hidden">
-        <div
-          className={`h-full rounded-full transition-all duration-700 ${
-            reached ? 'bg-emerald-400' : 'bg-[#E6007A]'
-          }`}
-          style={{ width: `${pct}%` }}
-        />
+      {/* progress bar */}
+      <div style={{ height: '6px', borderRadius: '999px', background: '#1E1E2E', overflow: 'hidden' }}>
+        <div style={{
+          height:      '100%',
+          borderRadius:'999px',
+          background:   reached
+            ? 'linear-gradient(90deg, #34D399, #6EE7B7)'
+            : 'linear-gradient(90deg, #E6007A, #FF6DC3)',
+          width:       `${pct}%`,
+          transition:  'width 0.6s ease',
+          boxShadow:   reached ? '0 0 8px rgba(52,211,153,0.5)' : '0 0 8px rgba(230,0,122,0.4)',
+        }} />
       </div>
 
-      {/* Guardian slots */}
-      <div className="flex gap-2">
+      {/* guardian slot pills */}
+      <div style={{ display: 'flex', gap: '8px' }}>
         {Array.from({ length: total }).map((_, i) => {
           const filled = i < submitted
           return (
-            <div key={i} className={`flex-1 h-8 rounded-lg border flex items-center justify-center text-xs font-semibold transition-colors
-              ${filled
-                ? 'bg-[#E6007A]/20 border-[#E6007A]/50 text-[#FF6DC3]'
-                : 'bg-[#0F0F1A] border-[#2E2E4E] text-gray-600'}`}
-            >
+            <div key={i} style={{
+              flex:           1,
+              height:         '36px',
+              borderRadius:   '10px',
+              display:        'flex',
+              alignItems:     'center',
+              justifyContent: 'center',
+              fontFamily:     'var(--font-body)',
+              fontWeight:     600,
+              fontSize:       '11px',
+              background:     filled ? 'rgba(230,0,122,0.12)' : 'rgba(15,15,26,0.9)',
+              border:         filled ? '1px solid rgba(230,0,122,0.4)' : '1px solid #252538',
+              color:          filled ? '#FF6DC3' : '#4B5563',
+              transition:     'all 0.3s ease',
+            }}>
               {filled ? '✓' : `G${i + 1}`}
             </div>
           )
@@ -46,8 +69,14 @@ export function SharesProgress({ submitted, threshold, total }: Props) {
       </div>
 
       {reached && (
-        <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-800/40 text-center">
-          <p className="text-emerald-400 text-sm font-semibold">
+        <div style={{
+          padding:      '12px 16px',
+          borderRadius: '12px',
+          background:   'rgba(6,78,59,0.25)',
+          border:       '1px solid rgba(52,211,153,0.25)',
+          textAlign:    'center',
+        }}>
+          <p style={{ fontFamily: 'var(--font-body)', fontWeight: 500, fontSize: '13px', color: '#34D399' }}>
             ✅ Threshold reached — verification complete
           </p>
         </div>

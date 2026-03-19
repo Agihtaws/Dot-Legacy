@@ -1,10 +1,10 @@
 import cron from 'node-cron';
-import { config } from './config.js';
+import { config }       from './config.js';
 import { verifyMailer } from './mailer.js';
 import { publicClient } from './contracts.js';
-import { runKeeper } from './keeper.js';
-import { createApp } from './api.js';
-import { count } from './registry.js';
+import { runKeeper }    from './keeper.js';
+import { createApp }    from './api.js';
+import { count }        from './registry.js';
 
 console.log('');
 console.log('  ██████╗  ██████╗ ████████╗    ██╗     ███████╗ ██████╗  █████╗  ██████╗██╗   ██╗');
@@ -31,7 +31,7 @@ async function startup() {
   // 2. Email check
   await verifyMailer();
 
-  // 3. Start Express API
+  // 3. Start API
   const app = createApp();
   app.listen(config.api.port, () => {
     console.log(`✅ API server running on http://localhost:${config.api.port}`);
@@ -43,15 +43,16 @@ async function startup() {
   // 4. Log config
   console.log('');
   console.log(`📋 Keeper config:`);
-  console.log(`   LegacyVault:     ${config.legacyVaultAddress}`);
-  console.log(`   Deploy block:    ${config.vaultDeployBlock}`);
-  console.log(`   Poll interval:   every ${config.pollIntervalMinutes} minutes`);
-  console.log(`   Warning at:      ${config.warningDays} days before deadline`);
-  console.log(`   Urgent at:       ${config.urgentDays} days before deadline`);
+  console.log(`   LegacyVault:      ${config.legacyVaultAddress}`);
+  console.log(`   Deploy block:     ${config.vaultDeployBlock}`);
+  console.log(`   Poll interval:    every ${config.pollIntervalMinutes} minutes`);
+  console.log(`   Warning at:       ${config.warningDays} days before deadline`);
+  console.log(`   Urgent at:        ${config.urgentDays} days before deadline`);
+  console.log(`   Frontend URL:     ${config.frontendUrl}`);
   console.log(`   Registered wills: ${count()}`);
   console.log('');
 
-  // 5. Run keeper immediately on startup
+  // 5. Run immediately on startup
   await runKeeper();
 
   // 6. Schedule cron
