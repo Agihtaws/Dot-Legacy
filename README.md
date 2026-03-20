@@ -11,7 +11,7 @@ $140 billion in crypto is permanently lost every year because people die without
 | | |
 |---|---|
 | 🌐 Live App | https://dot-legacy.vercel.app |
-| 🎥 Demo | `[PLACEHOLDER]` |
+| 🎥 Demo | https://youtu.be/nXtQoVJVY0M |
 | 📦 GitHub | https://github.com/Agihtaws/Dot-Legacy |
 | 🔍 Vault | [0x327052…Cf86b](https://blockscout-testnet.polkadot.io/address/0x327052a9B195A1a3F78e411f5fe78e76b81Cf86b) |
 | 🦀 PVM | [0x37E33f…36Ed](https://blockscout-testnet.polkadot.io/address/0x37E33fAA9148980EC76aAF1179bE02B648e036Ed) |
