@@ -1,11 +1,13 @@
 /**
  * DotLegacy REST API
  *
- * POST   /api/register   — frontend calls after createWill()
- * GET    /api/will/:id   — get will status + registry info
- * GET    /api/wills      — list all registered wills (admin)
- * GET    /api/health     — health check
- * DELETE /api/will/:id   — remove will from registry
+ * POST   /api/register     — frontend calls after createWill()
+ * POST   /api/reregister   — manually add/update email for an existing on-chain will
+ *                            (use this for wills created before the backend was running)
+ * GET    /api/will/:id     — get will status + registry info
+ * GET    /api/wills        — list all registered wills (admin)
+ * GET    /api/health       — health check
+ * DELETE /api/will/:id     — remove will from registry
  */
 
 import express from 'express';
@@ -46,6 +48,8 @@ export function createApp() {
 
   // -----------------------------------------------------------------------
   // POST /api/register
+  // Called by frontend immediately after createWill() tx is submitted.
+  // Only runs once willId is resolved — will not be called with '…' or 'unknown'.
   // -----------------------------------------------------------------------
   app.post('/api/register', async (req, res) => {
     try {
@@ -59,12 +63,17 @@ export function createApp() {
         return res.status(400).json({ error: 'Invalid email address' });
       }
 
+      // Reject placeholder values sent before willId was resolved
+      if (willId === '…' || willId === 'unknown' || willId === '') {
+        return res.status(400).json({ error: 'Will ID not yet resolved — retry once transaction confirms' });
+      }
+
       let willIdBig;
       try { willIdBig = BigInt(willId); }
       catch { return res.status(400).json({ error: 'Invalid will ID format' }); }
 
       if (getEntry(willIdBig)) {
-        return res.status(409).json({ error: `Will #${willId} is already registered` });
+        return res.status(409).json({ error: `Will #${willId} is already registered. Use /api/reregister to update the email.` });
       }
 
       let summary;
@@ -77,7 +86,6 @@ export function createApp() {
 
       registerWill({ willId: willIdBig, email, ownerAddress });
 
-      // Send welcome email — pass raw seconds so mailer can format correctly
       try {
         await sendWelcomeEmail({
           to: email,
@@ -100,6 +108,74 @@ export function createApp() {
 
     } catch (err) {
       console.error('POST /api/register error:', err.message);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // -----------------------------------------------------------------------
+  // POST /api/reregister
+  // Use this to add or update email for a will that was created on-chain
+  // before the backend was running, or to correct a wrong email address.
+  // Unlike /register, this overwrites any existing entry.
+  // -----------------------------------------------------------------------
+  app.post('/api/reregister', async (req, res) => {
+    try {
+      const { willId, email, ownerAddress } = req.body;
+
+      if (!willId || !email || !ownerAddress) {
+        return res.status(400).json({ error: 'Missing required fields: willId, email, ownerAddress' });
+      }
+
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Invalid email address' });
+      }
+
+      let willIdBig;
+      try { willIdBig = BigInt(willId); }
+      catch { return res.status(400).json({ error: 'Invalid will ID format' }); }
+
+      // Verify the will exists on-chain
+      let summary;
+      try { summary = await getWillSummary(willIdBig); }
+      catch { return res.status(404).json({ error: `Will #${willId} not found on chain` }); }
+
+      // Verify ownership
+      if (summary.owner.toLowerCase() !== ownerAddress.toLowerCase()) {
+        return res.status(403).json({ error: 'Owner address does not match will on-chain' });
+      }
+
+      const existing = getEntry(willIdBig);
+
+      // Overwrite (or create) the registry entry
+      registerWill({ willId: willIdBig, email, ownerAddress });
+
+      // Only send welcome email if this is a brand-new registration
+      if (!existing) {
+        try {
+          await sendWelcomeEmail({
+            to: email,
+            willId: willIdBig,
+            ownerAddress,
+            checkInPeriodSeconds: Number(summary.checkInPeriod),
+          });
+        } catch (emailErr) {
+          console.warn(`  ⚠️  Welcome email failed: ${emailErr.message}`);
+        }
+      }
+
+      return res.json({
+        success:  true,
+        willId:   willId.toString(),
+        email,
+        ownerAddress,
+        updated:  !!existing,
+        message:  existing
+          ? `Will #${willId} email updated to ${email}.`
+          : `Will #${willId} registered with email ${email}. Welcome email sent.`,
+      });
+
+    } catch (err) {
+      console.error('POST /api/reregister error:', err.message);
       return res.status(500).json({ error: 'Internal server error' });
     }
   });

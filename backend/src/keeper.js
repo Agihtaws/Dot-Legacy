@@ -73,6 +73,11 @@ async function processWill(willId) {
     const deadlineDate      = new Date(realDeadline * 1000);
     const email             = getEmail(willId);
 
+    // Convert day-based config thresholds to seconds so they work correctly
+    // for both testnet (minutes) and production (days) check-in periods
+    const urgentSeconds  = config.urgentDays  * 86400;
+    const warningSeconds = config.warningDays * 86400;
+
     console.log(`  Will #${willId} | ${statusName} | ${minutesLeft}m left | email: ${email || 'not registered'}`);
 
     // ── Clean up finished wills ──
@@ -138,27 +143,37 @@ async function processWill(willId) {
       return;
     }
 
-    // ── Threshold: only notify when < 50% of period remains ──
-    const halfPeriod = checkInPeriod / 2;
+    // ── Notification thresholds — compared in seconds, not days ──
+    // This correctly handles both testnet (minutes) and production (days) periods.
+    // urgentSeconds  = config.urgentDays  * 86400 (e.g. 0.002d = ~173s for testnet)
+    // warningSeconds = config.warningDays * 86400 (e.g. 0.004d = ~346s for testnet)
 
-    // Urgent warning
-    if (secondsToDeadline <= halfPeriod && daysLeft <= config.urgentDays && secondsToDeadline > 0) {
+    if (secondsToDeadline <= urgentSeconds && secondsToDeadline > 0) {
       const key = notifKey(willId, 'urgent');
       if (!notified.has(key)) {
-        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft: Math.ceil(daysLeft), deadline: deadlineDate });
+        await sendWarningEmail({
+          to: email, willId, ownerAddress: summary.owner,
+          daysLeft: Math.ceil(daysLeft), deadline: deadlineDate,
+        });
         notified.add(key);
-        console.log(`    ↳ Urgent email sent`);
+        console.log(`    ↳ Urgent email sent (${Math.floor(secondsToDeadline)}s left)`);
+      } else {
+        console.log(`    ↳ Urgent email already sent`);
       }
       return;
     }
 
-    // Regular warning
-    if (secondsToDeadline <= halfPeriod && daysLeft <= config.warningDays && secondsToDeadline > 0) {
+    if (secondsToDeadline <= warningSeconds && secondsToDeadline > 0) {
       const key = notifKey(willId, 'warning');
       if (!notified.has(key)) {
-        await sendWarningEmail({ to: email, willId, ownerAddress: summary.owner, daysLeft: Math.ceil(daysLeft), deadline: deadlineDate });
+        await sendWarningEmail({
+          to: email, willId, ownerAddress: summary.owner,
+          daysLeft: Math.ceil(daysLeft), deadline: deadlineDate,
+        });
         notified.add(key);
-        console.log(`    ↳ Warning email sent`);
+        console.log(`    ↳ Warning email sent (${Math.floor(secondsToDeadline)}s left)`);
+      } else {
+        console.log(`    ↳ Warning email already sent`);
       }
       return;
     }

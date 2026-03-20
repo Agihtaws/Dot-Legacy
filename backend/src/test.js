@@ -33,10 +33,10 @@ async function run() {
   if (!ok) { console.log('  ❌ Email not configured\n'); return; }
   try {
     await sendWelcomeEmail({
-      to:                config.email.user,
-      willId:            1n,
-      ownerAddress:      '0x63eea403e3075D9e6b5eA18c28021e6FfdD04a67',
-      checkInPeriodDays: 90,
+      to:                   config.email.user,
+      willId:               1n,
+      ownerAddress:         '0x63eea403e3075D9e6b5eA18c28021e6FfdD04a67',
+      checkInPeriodSeconds: 90 * 86400,   // fixed: was checkInPeriodDays: 90
     });
     console.log(`  ✅ Welcome email sent to ${config.email.user}\n`);
   } catch (err) {

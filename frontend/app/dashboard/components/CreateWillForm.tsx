@@ -348,13 +348,23 @@ export function CreateWillForm({ onWillCreated }: Props) {
           }
         } catch { console.warn('Could not resolve willId from chain') }
 
-        // Backend registration (fire-and-forget)
-        try {
-          await fetch(`${API_URL}/api/register`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ willId: willId || 'unknown', email, ownerAddress: address, txHash }),
-          })
-        } catch { console.warn('Backend registration failed — will created on-chain successfully') }
+        // Backend registration — only call when willId is actually resolved.
+        // Sending 'unknown' or '…' would cause api.js to return a 400 and
+        // the will would never appear in the registry (no emails ever sent).
+        if (willId) {
+          try {
+            const resp = await fetch(`${API_URL}/api/register`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ willId, email, ownerAddress: address, txHash }),
+            })
+            if (!resp.ok) {
+              const err = await resp.json().catch(() => ({}))
+              console.warn('Backend registration failed:', err?.error ?? resp.status)
+            }
+          } catch { console.warn('Backend registration failed — will created on-chain successfully') }
+        } else {
+          console.warn('Could not resolve willId — backend registration skipped. Use /api/reregister manually.')
+        }
       })()
 
     } catch (err: any) {
