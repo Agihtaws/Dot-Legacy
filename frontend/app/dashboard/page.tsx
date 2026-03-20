@@ -11,6 +11,10 @@ import { Assets }             from './components/Assets'
 import { Navbar }             from '@/components/Navbar'
 import { Button }             from '@/components/ui/Button'
 
+/* ── Shares display lives HERE at page level so it can never
+   be unmounted by auto-refetch of useOwnerWills ── */
+import { SharesDisplay }      from './components/CreateWillForm'
+
 function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden>
@@ -29,14 +33,16 @@ function LockIcon() {
 }
 
 export default function DashboardPage() {
-  const { address, isConnected }  = useAccount()
+  const { address, isConnected }   = useAccount()
   const { data: willIds, refetch } = useOwnerWills(address)
+  const [showCreate, setShowCreate] = useState(false)
 
-  // showCreate = user clicked "+ New Will"
-  const [showCreate,  setShowCreate]  = useState(false)
-  // formVisible = keeps the form+shares mounted until user clicks "Go to Dashboard"
-  // prevents guardian shares screen from being destroyed by auto-refetch
-  const [formVisible, setFormVisible] = useState(false)
+  // ── Shares state lives at page level — survives refetches ──
+  const [pendingShares, setPendingShares] = useState<{
+    shares:    bigint[]
+    guardians: string[]
+    willId:    string
+  } | null>(null)
 
   const statusResults = useReadContracts({
     contracts: (willIds ?? []).map(id => ({
@@ -55,14 +61,20 @@ export default function DashboardPage() {
     return status < 4
   })
 
-  // Show form when: no active wills yet, OR user clicked + New Will, OR form was just active
-  const shouldShowForm = activeWills.length === 0 || showCreate || formVisible
-
-  function handleFormSuccess() {
+  function handleWillCreated(shares: bigint[], guardians: string[], willId: string) {
+    // Called by CreateWillForm the moment shares are ready
+    // Store at page level so it survives any refetch
+    setPendingShares({ shares, guardians, willId })
     refetch()
     setShowCreate(false)
-    setFormVisible(false)
   }
+
+  function handleSharesDone() {
+    setPendingShares(null)
+    refetch()
+  }
+
+  const shouldShowForm = activeWills.length === 0 || showCreate
 
   /* ── disconnected ── */
   if (!isConnected) {
@@ -74,24 +86,23 @@ export default function DashboardPage() {
         <Navbar />
         <div className="flex items-center justify-center min-h-[calc(100vh-80px)] px-5">
           <div className="relative max-w-sm w-full rounded-2xl overflow-hidden text-center p-10"
-            style={{ background: 'rgba(17,17,24,0.85)', border: '1px solid #1E1E2E', backdropFilter: 'blur(12px)' }}
-          >
+            style={{ background:'rgba(17,17,24,0.85)',border:'1px solid #1E1E2E',backdropFilter:'blur(12px)' }}>
             <div aria-hidden className="absolute top-0 left-0 right-0 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(230,0,122,0.4), transparent)' }} />
+              style={{ background:'linear-gradient(90deg,transparent,rgba(230,0,122,0.4),transparent)' }} />
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"
-              style={{ background: 'rgba(230,0,122,0.08)', border: '1px solid rgba(230,0,122,0.2)' }}>
+              style={{ background:'rgba(230,0,122,0.08)',border:'1px solid rgba(230,0,122,0.2)' }}>
               <LockIcon />
             </div>
             <h2 className="text-white mb-2"
-              style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.25rem' }}>
+              style={{ fontFamily:'var(--font-display)',fontWeight:700,fontSize:'1.25rem' }}>
               Connect your wallet
             </h2>
             <p className="text-gray-400 mb-3 leading-relaxed"
-              style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '14px' }}>
+              style={{ fontFamily:'var(--font-body)',fontWeight:300,fontSize:'14px' }}>
               Connect MetaMask to view your will or create a new one.
             </p>
             <p className="text-gray-700"
-              style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '12px' }}>
+              style={{ fontFamily:'var(--font-body)',fontWeight:300,fontSize:'12px' }}>
               Polkadot Hub TestNet · chainId 420420417
             </p>
           </div>
@@ -100,49 +111,71 @@ export default function DashboardPage() {
     )
   }
 
-  /* ── connected ── */
+  /* ── shares screen — shown at page level, never unmounted by refetch ── */
+  if (pendingShares) {
+    return (
+      <div className="min-h-screen relative" style={{ background: '#0A0A0F' }}>
+        <Navbar />
+        <div className="relative max-w-3xl mx-auto px-5 pt-24 pb-20">
+          <div className="relative rounded-2xl overflow-hidden"
+            style={{ background:'rgba(17,17,24,0.85)',border:'1px solid #1E1E2E',backdropFilter:'blur(10px)' }}>
+            <div aria-hidden className="absolute top-0 left-0 right-0 h-px"
+              style={{ background:'linear-gradient(90deg,transparent,rgba(230,0,122,0.3),transparent)' }} />
+            <div className="p-6">
+              <SharesDisplay
+                shares={pendingShares.shares}
+                guardians={pendingShares.guardians}
+                willId={pendingShares.willId}
+                onDone={handleSharesDone}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  /* ── main dashboard ── */
   return (
     <div className="min-h-screen relative" style={{ background: '#0A0A0F' }}>
       <div aria-hidden className="pointer-events-none absolute top-0 left-0 right-0 h-96" style={{
-        background: 'radial-gradient(ellipse 70% 100% at 50% 0%, rgba(230,0,122,0.05) 0%, transparent 100%)',
+        background:'radial-gradient(ellipse 70% 100% at 50% 0%,rgba(230,0,122,0.05) 0%,transparent 100%)',
       }} />
 
       <Navbar />
 
       <div className="relative max-w-3xl mx-auto px-5 pt-24 pb-20 space-y-5">
 
-        {/* ── header ── */}
+        {/* header */}
         <div className="flex items-end justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] mb-1"
-              style={{ fontFamily: 'var(--font-body)', color: '#FF6DC3' }}>
+              style={{ fontFamily:'var(--font-body)',color:'#FF6DC3' }}>
               Dashboard
             </p>
             <h1 className="text-white leading-tight"
-              style={{ fontFamily: 'var(--font-display)', fontWeight: 800, fontSize: 'clamp(1.6rem, 4vw, 2.2rem)' }}>
+              style={{ fontFamily:'var(--font-display)',fontWeight:800,fontSize:'clamp(1.6rem,4vw,2.2rem)' }}>
               My Will
             </h1>
             <p className="text-gray-500 mt-1"
-              style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '13px' }}>
+              style={{ fontFamily:'var(--font-body)',fontWeight:300,fontSize:'13px' }}>
               {activeWills.length === 0
                 ? 'No active will yet'
                 : `${activeWills.length} active will${activeWills.length > 1 ? 's' : ''}`}
             </p>
           </div>
-
-          {activeWills.length > 0 && !showCreate && !formVisible && (
-            <Button size="sm" onClick={() => { setShowCreate(true); setFormVisible(true) }}>
-              <PlusIcon />
-              New Will
+          {activeWills.length > 0 && !showCreate && (
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <PlusIcon /> New Will
             </Button>
           )}
         </div>
 
-        {/* ── assets ── */}
+        {/* assets */}
         <Assets />
 
-        {/* ── active wills — hidden while form/shares is showing ── */}
-        {activeWills.length > 0 && !shouldShowForm && (
+        {/* active wills */}
+        {activeWills.length > 0 && !showCreate && (
           <div className="space-y-5">
             {activeWills.map(willId => (
               <WillCard
@@ -154,42 +187,34 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* ── create form + shares ── */}
+        {/* create form */}
         {shouldShowForm && (
           <div className="relative rounded-2xl overflow-hidden"
-            style={{ background: 'rgba(17,17,24,0.85)', border: '1px solid #1E1E2E', backdropFilter: 'blur(10px)' }}
-          >
+            style={{ background:'rgba(17,17,24,0.85)',border:'1px solid #1E1E2E',backdropFilter:'blur(10px)' }}>
             <div aria-hidden className="absolute top-0 left-0 right-0 h-px"
-              style={{ background: 'linear-gradient(90deg, transparent, rgba(230,0,122,0.3), transparent)' }} />
-
+              style={{ background:'linear-gradient(90deg,transparent,rgba(230,0,122,0.3),transparent)' }} />
             <div className="p-6">
               <div className="flex items-start justify-between mb-6">
                 <div>
                   <h2 className="text-white"
-                    style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: '1.125rem' }}>
+                    style={{ fontFamily:'var(--font-display)',fontWeight:700,fontSize:'1.125rem' }}>
                     {showCreate ? 'Create Another Will' : 'Create Your Will'}
                   </h2>
                   <p className="text-gray-500 mt-1"
-                    style={{ fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: '13px' }}>
+                    style={{ fontFamily:'var(--font-body)',fontWeight:300,fontSize:'13px' }}>
                     Set up on-chain inheritance in minutes
                   </p>
                 </div>
-                {(showCreate || formVisible) && activeWills.length > 0 && (
-                  <button
-                    onClick={() => { setShowCreate(false); setFormVisible(false) }}
+                {showCreate && (
+                  <button onClick={() => setShowCreate(false)}
                     className="text-gray-500 hover:text-gray-300 transition-colors"
-                    style={{ fontFamily: 'var(--font-body)', fontSize: '13px' }}
-                  >
+                    style={{ fontFamily:'var(--font-body)',fontSize:'13px' }}>
                     Cancel
                   </button>
                 )}
               </div>
 
-              {/* Mark formVisible=true as soon as form mounts so we hold it open */}
-              <CreateWillForm
-                onSuccess={handleFormSuccess}
-                onFormActive={() => setFormVisible(true)}
-              />
+              <CreateWillForm onWillCreated={handleWillCreated} />
             </div>
           </div>
         )}

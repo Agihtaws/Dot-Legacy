@@ -12,7 +12,8 @@ import { Input }                                                from '@/componen
 import { Button }                                               from '@/components/ui/Button'
 
 interface Beneficiary { address: string; percent: string }
-interface Props       { onSuccess: () => void; onFormActive?: () => void }
+// Change 1 – new Props interface
+interface Props { onWillCreated: (shares: bigint[], guardians: string[], willId: string) => void }
 
 const STEPS = ['Beneficiaries', 'Guardians', 'Check-in', 'Tokens & Email', 'Confirm']
 
@@ -71,9 +72,9 @@ function ToggleButton({
 }
 
 /* ─────────────────────────────────────────────────────────
-   SharesDisplay
+   SharesDisplay (now exported – Change 2)
 ───────────────────────────────────────────────────────── */
-function SharesDisplay({
+export function SharesDisplay({
   shares, guardians, willId, onDone,
 }: {
   shares: bigint[]; guardians: string[]; willId: string; onDone: () => void
@@ -188,17 +189,15 @@ function SharesDisplay({
 }
 
 /* ─────────────────────────────────────────────────────────
-   CreateWillForm
+   CreateWillForm – Change 3 (signature)
 ───────────────────────────────────────────────────────── */
-export function CreateWillForm({ onSuccess, onFormActive }: Props) {
+export function CreateWillForm({ onWillCreated }: Props) {
   const { address }       = useAccount()
   const publicClient      = usePublicClient()
   const [step, setStep]   = useState(0)
   const [error, setError] = useState('')
 
-  // Notify parent on mount so it keeps the form visible during auto-refetches
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { onFormActive?.() }, [])
+  // Change 4 – removed the onFormActive useEffect
 
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([{ address: '', percent: '100' }])
   const [guardians,      setGuardians]      = useState([''])
@@ -271,16 +270,15 @@ export function CreateWillForm({ onSuccess, onFormActive }: Props) {
       const { shares, secretHash } = generateShares(threshold, activeGuardians.length)
 
       setTxStatus('approving')
-const amount = parseUnits(tokenAmount, selectedToken.decimals)
-const approveTxHash = await writeContractAsync({
-  address: selectedToken.address, abi: ERC20_ABI,
-  functionName: 'approve', args: [CONTRACTS.LEGACY_VAULT, amount],
-})
+      const amount = parseUnits(tokenAmount, selectedToken.decimals)
+      const approveTxHash = await writeContractAsync({
+        address: selectedToken.address, abi: ERC20_ABI,
+        functionName: 'approve', args: [CONTRACTS.LEGACY_VAULT, amount],
+      })
 
+      await publicClient.waitForTransactionReceipt({ hash: approveTxHash })
 
-await publicClient.waitForTransactionReceipt({ hash: approveTxHash })
-
-setTxStatus('creating')
+      setTxStatus('creating')
       const bpsPercents = beneficiaries.map(b => BigInt(Math.round(Number(b.percent) * 100)))
       const txHash = await writeContractAsync({
         address: CONTRACTS.LEGACY_VAULT, abi: LEGACY_VAULT_ABI,
@@ -294,24 +292,34 @@ setTxStatus('creating')
       })
 
       setTxStatus('registering')
-      const receipt = await publicClient.waitForTransactionReceipt({ hash: txHash })
 
-      let willId = '1'
-      try {
-        const log = receipt.logs.find(l =>
-          l.address.toLowerCase() === CONTRACTS.LEGACY_VAULT.toLowerCase() &&
-          l.topics[0] === '0xeac02bfde2bb7261f68689a99ae1e8d24927531e7ca2502a8b12de1eed25c096'
-        )
-        if (log?.topics[1]) {
-          willId = BigInt(log.topics[1]).toString()
-        } else {
-          const ownerWills = await publicClient.readContract({
-            address: CONTRACTS.LEGACY_VAULT, abi: LEGACY_VAULT_ABI,
-            functionName: 'getOwnerWills', args: [address],
-          }) as bigint[]
-          if (ownerWills.length > 0) willId = ownerWills[ownerWills.length - 1].toString()
-        }
-      } catch {}
+let willId = '1'
+try {
+  // Wait max 30s for receipt, then fall back to reading chain directly
+  const receipt = await Promise.race([
+    publicClient.waitForTransactionReceipt({ hash: txHash }),
+    new Promise<null>(r => setTimeout(() => r(null), 30_000))
+  ])
+
+  if (receipt && receipt !== null) {
+    const log = (receipt as any).logs?.find((l: any) =>
+      l.address.toLowerCase() === CONTRACTS.LEGACY_VAULT.toLowerCase() &&
+      l.topics[0] === '0xeac02bfde2bb7261f68689a99ae1e8d24927531e7ca2502a8b12de1eed25c096'
+    )
+    if (log?.topics[1]) {
+      willId = BigInt(log.topics[1]).toString()
+    }
+  }
+
+  // Always read from chain as fallback
+  if (willId === '1') {
+    const ownerWills = await publicClient.readContract({
+      address: CONTRACTS.LEGACY_VAULT, abi: LEGACY_VAULT_ABI,
+      functionName: 'getOwnerWills', args: [address],
+    }) as bigint[]
+    if (ownerWills.length > 0) willId = ownerWills[ownerWills.length - 1].toString()
+  }
+} catch {}
 
       try {
         await fetch(`${API_URL}/api/register`, {
@@ -324,6 +332,9 @@ setTxStatus('creating')
       setCreatedWillId(willId)
       setTxStatus('done')
 
+      // Change 4 – lift shares to parent (parent renders SharesDisplay)
+      onWillCreated(shares, activeGuardians, willId)
+
     } catch (err: any) {
       const msg = err?.shortMessage || err?.message || 'Transaction failed'
       setError(msg.includes('user rejected') ? 'Transaction rejected in MetaMask' : msg)
@@ -333,16 +344,8 @@ setTxStatus('creating')
 
   const isSubmitting = txStatus !== 'idle' && txStatus !== 'done'
 
-  if (txStatus === 'done' && createdWillId && generatedShares.length > 0) {
-    return (
-      <SharesDisplay
-        shares={generatedShares}
-        guardians={guardians.filter(g => g.trim())}
-        willId={createdWillId}
-        onDone={onSuccess}
-      />
-    )
-  }
+  // Change 4 – hide form after success; parent will show SharesDisplay
+  if (txStatus === 'done') return null
 
   const totalPercent   = beneficiaries.reduce((s, b) => s + Number(b.percent || 0), 0)
   const filledGuardians = guardians.filter(g => g.trim())
